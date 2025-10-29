@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Teachable Machine Image Model</title>
+
+  <!-- Estilos mínimos para layout -->
+  <style>
+    :root { --size: 200px; --gap: 1rem; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      margin: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: var(--gap);
+      align-items: flex-start;
+    }
+    #webcam-container {
+      width: var(--size);
+      height: var(--size);
+      display: grid;
+      place-items: center;
+      background: #f5f5f5;
+      border: 1px solid #e0e0e0;
+    }
+    #label-container div {
+      margin: 0.2rem 0;
+      font-size: 0.95rem;
+    }
+    button {
+      padding: 0.4rem 0.8rem;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button[aria-pressed="true"] { background: #e0f7fa; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
+
+  <!-- Bibliotecas com defer para carregar após o parsing do DOM -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js" defer></script>
+
+  <!-- Script principal com defer -->
+  <script defer>
+    const URL = "./projetosjavascript/";
+
+    let model = null;
+    let webcam = null;
+    let labelContainer = null;
+    let maxPredictions = 0;
+    let running = false;
+
+    async function initModelAndWebcam() {
+      if (running) return;
+      running = true;
+
+      try {
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+        model = await tmImage.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+
+        const flip = true;
+        webcam = new tmImage.Webcam(200, 200, flip);
+        await webcam.setup();
+        await webcam.play();
+
+        const webcamContainer = document.getElementById("webcam-container");
+        webcamContainer.innerHTML = "";
+        webcamContainer.appendChild(webcam.canvas);
+
+        labelContainer = document.getElementById("label-container");
+        labelContainer.innerHTML = "";
+        for (let i = 0; i < maxPredictions; i++) {
+          const div = document.createElement("div");
+          div.textContent = "—";
+          labelContainer.appendChild(div);
+        }
+
+        requestAnimationFrame(loop);
+        updateStartButton(true);
+      } catch (err) {
+        console.error("Erro ao carregar o modelo ou webcam:", err);
+        alert("Falha ao inicializar o modelo/webcam. Veja o console para mais detalhes.");
+        running = false;
+      }
+    }
+
+    async function loop() {
+      if (!running) return;
+      try {
+        webcam.update();
+        await predict();
+        requestAnimationFrame(loop);
+      } catch (err) {
+        console.error("Erro no loop de predição:", err);
+        stop();
+      }
+    }
+
+    async function predict() {
+      if (!model || !webcam) return;
+      const prediction = await model.predict(webcam.canvas);
+      for (let i = 0; i < maxPredictions; i++) {
+        const classPrediction = prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+        labelContainer.childNodes[i].textContent = classPrediction;
+      }
+    }
+
+    function stop() {
+      running = false;
+      updateStartButton(false);
+      if (webcam) {
+        try {
+          webcam.stop();
+          const webcamContainer = document.getElementById("webcam-container");
+          webcamContainer.innerHTML = '<div class="sr-only" aria-hidden="true">Webcam parada</div>';
+        } catch (err) {
+          console.warn("Erro ao parar webcam:", err);
+        }
+        webcam = null;
+      }
+    }
+
+    function updateStartButton(isRunning) {
+      const btn = document.getElementById("startButton");
+      btn.setAttribute("aria-pressed", String(Boolean(isRunning)));
+      btn.textContent = isRunning ? "Parar" : "Start";
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      const btn = document.getElementById("startButton");
+      btn.addEventListener("click", () => {
+        if (!running) {
+          initModelAndWebcam();
+        } else {
+          stop();
+        }
+      });
+
+      // Mensagem inicial acessível
+      const labelContainerEl = document.getElementById("label-container");
+      labelContainerEl.innerHTML = '<div>Pronto para iniciar</div>';
+    });
+  </script>
+</head>
+<body>
+  <h1>Teachable Machine Image Model</h1>
+
+  <div>
+    <button type="button" id="startButton" aria-pressed="false">Start</button>
+  </div>
+
+  <div id="webcam-container" aria-live="polite" aria-label="Webcam preview">
+    <div class="sr-only">Webcam não iniciada</div>
+  </div>
+
+  <div id="label-container" aria-live="polite" aria-label="Predictions"></div>
+
+  <noscript>
+    <p>Este aplicativo requer JavaScript. Habilite JavaScript no seu navegador para usar a webcam e as predições.</p>
+  </noscript>
+</body>
+</html>
